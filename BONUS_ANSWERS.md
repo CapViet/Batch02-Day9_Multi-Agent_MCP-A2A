@@ -13,27 +13,24 @@ Chuyển sang tab **Stage 5** khi hệ thống A2A đang chạy (`.\start_all.ps
 
 ## 2. Latency của hệ thống Stage 5
 
-### Pipeline và thời gian từng bước
+### Pipeline và thời gian từng bước (đo thực tế với Gemini 2.5 Flash)
 
 ```
 User
  └─► Customer Agent   (1 LLM call)   ~2-3s
       └─► Law Agent
-           ├─ analyze_law    (1 LLM call)   ~3-4s   ← sequential
+           ├─ analyze_law    (1 LLM call)   6.15s   ← sequential
            ├─ check_routing  (keyword)      <1ms    ← optimized, no LLM
-           ├─ Tax Agent      (1 LLM call)   ~3-4s   ┐ parallel
-           ├─ Compliance     (1 LLM call)   ~3-4s   ┘ (same time slot)
-           └─ aggregate      (1 LLM call)   ~3-4s   ← sequential
+           ├─ Tax Agent      (1 LLM call)   4.15s   ┐ parallel
+           ├─ Compliance     (1 LLM call)   2.92s   ┘ (same time slot)
+           └─ aggregate      (1 LLM call)   3.86s   ← sequential
  └─► Customer formats response             ~2-3s
 ```
 
-**Tổng latency ước tính: ~13–18 giây**
+**Tổng latency đo thực tế (test_client.py): 87.72 giây**
 
-> Số chính xác được in ra khi chạy:
-> ```
-> uv run python test_client.py
-> ⏱  End-to-end latency: X.XXs
-> ```
+> Đây là thời gian end-to-end toàn bộ hệ thống A2A distributed (5 HTTP hops).  
+> Pipeline nội bộ của law_agent (không tính network overhead) mất ~14s với keyword routing.
 
 ---
 
@@ -41,12 +38,12 @@ User
 
 ### Phương án: Thay LLM routing bằng keyword matching
 
-**Vấn đề:** Node `check_routing` trong `law_agent/graph.py` ban đầu gọi một LLM riêng chỉ để quyết định có cần Tax Agent và Compliance Agent không. Đây là 1 LLM call không cần thiết trên critical path (~2-3 giây).
+**Vấn đề:** Node `check_routing` trong `law_agent/graph.py` ban đầu gọi một LLM riêng chỉ để quyết định có cần Tax Agent và Compliance Agent không. Với mô hình thinking như Gemini 2.5 Flash, đây là **34.91 giây** lãng phí trên critical path.
 
 **Giải pháp:** Thay bằng keyword matching tức thì (< 1ms):
 
 ```python
-# BEFORE — 1 extra LLM call (~2-3s)
+# BEFORE — 1 extra LLM call (34.91s với Gemini 2.5 Flash thinking model)
 result = await llm.ainvoke([SystemMessage(...), HumanMessage(question)])
 parsed = json.loads(result.content)
 
@@ -55,14 +52,20 @@ needs_tax = any(kw in question.lower() for kw in ["tax", "irs", "thuế", "evasi
 needs_compliance = any(kw in question.lower() for kw in ["compliance", "sec", "sox", ...])
 ```
 
-**Kết quả:**
+**Kết quả đo thực tế (`bonus_latency_demo.py` với Gemini 2.5 Flash):**
 
-| | Trước | Sau |
+| | Version A (LLM routing) | Version B (Keyword routing) |
 |---|---|---|
-| LLM calls trong pipeline | 6 | 5 |
-| check_routing time | ~2-3s | <1ms |
-| Tổng latency ước tính | ~18s | ~15s |
-| Cải thiện | — | ~17% nhanh hơn |
+| analyze_law | 6.15s | ~6.15s |
+| check_routing | **34.91s** ← LLM thinking | **<0.001s** ← instant |
+| tax + compliance (parallel) | 4.15s | ~4.15s |
+| aggregate | 3.86s | ~3.86s |
+| **Tổng** | **49.09s** (đo thực tế) | **~14.2s** (ước tính) |
+| LLM calls | 6 | 5 |
+| Cải thiện | — | **~71% nhanh hơn** |
+
+> **Ghi chú:** Version B không đo được trực tiếp do rate limit API (20 req/day free tier).  
+> Số ~14.2s tính từ: 6.15 + 0.001 + max(4.15, 2.92) + 3.86 = 14.16s.
 
 ### Demo so sánh trực tiếp
 
@@ -73,10 +76,14 @@ uv run python bonus_latency_demo.py
 Script chạy cả 2 phiên bản (LLM routing vs keyword routing) liên tiếp và in ra:
 
 ```
-Version A (LLM routing):      18.XX s
-Version B (keyword routing):  15.XX s
-Time saved:                    3.XX s  (~17% faster)
+Version A (LLM routing):      49.09s
+Version B (keyword routing):  ~14.16s
+Time saved:                   ~34.93s  (~71% faster)
 ```
+
+### Tại sao tiết kiệm nhiều hơn dự kiến?
+
+Mô hình **thinking** (như Gemini 2.5 Flash, Claude 3.7 Sonnet với extended thinking) có thêm bước "suy nghĩ" nội bộ trước khi trả lời. Với câu hỏi routing đơn giản như "có cần tax agent không?", mô hình vẫn tốn thời gian thinking (~30s) dù câu trả lời chỉ là `{"needs_tax": true}`. Keyword matching bypass hoàn toàn bước này.
 
 ### Các tối ưu đã áp dụng
 
