@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Legal Multi-Agent System — Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #7dd3fc;
+      margin-bottom: 0.4rem;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #64748b;
+      font-size: 0.85rem;
+      margin-bottom: 2rem;
+    }
+
+    /* ── Pipeline diagram ── */
+    .pipeline {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      flex-wrap: wrap;
+      margin-bottom: 2rem;
+    }
+
+    .agent-box {
+      background: #1e293b;
+      border: 2px solid #334155;
+      border-radius: 10px;
+      padding: 0.6rem 1rem;
+      text-align: center;
+      min-width: 110px;
+      transition: border-color 0.3s, box-shadow 0.3s, background 0.3s;
+      position: relative;
+    }
+
+    .agent-box .icon { font-size: 1.4rem; }
+    .agent-box .name { font-size: 0.7rem; font-weight: 600; color: #94a3b8; margin-top: 2px; }
+    .agent-box .port { font-size: 0.6rem; color: #475569; }
+
+    .agent-box.active {
+      border-color: #38bdf8;
+      background: #0c2d48;
+      box-shadow: 0 0 16px #38bdf855;
+    }
+    .agent-box.active .name { color: #7dd3fc; }
+
+    .agent-box.done {
+      border-color: #34d399;
+      background: #052e16;
+    }
+    .agent-box.done .name { color: #6ee7b7; }
+
+    .parallel-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .arrow {
+      color: #475569;
+      font-size: 1.2rem;
+      padding: 0 0.3rem;
+      align-self: center;
+    }
+
+    /* ── Input area ── */
+    .input-section {
+      max-width: 720px;
+      margin: 0 auto 1.5rem;
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    textarea {
+      flex: 1;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      color: #e2e8f0;
+      padding: 0.75rem 1rem;
+      font-size: 0.9rem;
+      resize: none;
+      outline: none;
+      transition: border-color 0.2s;
+      height: 72px;
+    }
+    textarea:focus { border-color: #38bdf8; }
+
+    button {
+      background: #0284c7;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 0 1.4rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    button:hover { background: #0369a1; }
+    button:disabled { background: #334155; cursor: not-allowed; }
+
+    /* ── Presets ── */
+    .presets {
+      max-width: 720px;
+      margin: 0 auto 1.5rem;
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .preset-btn {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #94a3b8;
+      padding: 0.3rem 0.8rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .preset-btn:hover { border-color: #38bdf8; color: #7dd3fc; background: #0c2d48; }
+
+    /* ── Log / response ── */
+    .log-section {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+    .log-header span { font-size: 0.8rem; color: #64748b; }
+    .timing { font-size: 0.8rem; color: #fbbf24; font-weight: 600; }
+
+    #log {
+      background: #0d1117;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 1rem;
+      min-height: 180px;
+      font-size: 0.82rem;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      overflow-y: auto;
+      max-height: 400px;
+      color: #cbd5e1;
+    }
+
+    .step-log { color: #60a5fa; }
+    .answer-log { color: #86efac; }
+    .error-log { color: #f87171; }
+    .info-log { color: #94a3b8; }
+
+    .spinner {
+      display: inline-block;
+      width: 12px; height: 12px;
+      border: 2px solid #334155;
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Stage switcher ── */
+    .stage-tabs {
+      display: flex;
+      justify-content: center;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .tab {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      color: #64748b;
+      padding: 0.35rem 1rem;
+      font-size: 0.8rem;
+      cursor: pointer;
+    }
+    .tab.active { background: #0c2d48; border-color: #38bdf8; color: #7dd3fc; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<h1>⚖️ Legal Multi-Agent System</h1>
+<p class="subtitle">Multi-Agent Demo · LangGraph + A2A Protocol</p>
+
+<!-- Stage tabs -->
+<div class="stage-tabs">
+  <div class="tab active" onclick="setStage(4, this)">Stage 4 — In-Process</div>
+  <div class="tab" onclick="setStage(5, this)">Stage 5 — Distributed A2A</div>
+</div>
+
+<!-- Pipeline diagram -->
+<div class="pipeline" id="pipeline">
+  <div class="agent-box" id="box-customer">
+    <div class="icon">👤</div>
+    <div class="name">Customer Agent</div>
+    <div class="port">:10100</div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="agent-box" id="box-law">
+    <div class="icon">⚖️</div>
+    <div class="name">Law Agent</div>
+    <div class="port">:10101</div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="parallel-group">
+    <div class="agent-box" id="box-tax">
+      <div class="icon">💰</div>
+      <div class="name">Tax Agent</div>
+      <div class="port">:10102</div>
+    </div>
+    <div class="agent-box" id="box-compliance">
+      <div class="icon">📋</div>
+      <div class="name">Compliance Agent</div>
+      <div class="port">:10103</div>
+    </div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="agent-box" id="box-aggregate">
+    <div class="icon">🔗</div>
+    <div class="name">Aggregate</div>
+    <div class="port">final answer</div>
+  </div>
+</div>
+
+<!-- Question presets -->
+<div class="presets">
+  <span style="font-size:0.75rem;color:#475569;align-self:center">Quick questions:</span>
+  <button class="preset-btn" onclick="setQ('If a company breaks a contract and avoids taxes, what are the legal and regulatory consequences?')">Contract + Tax</button>
+  <button class="preset-btn" onclick="setQ('A tech startup shared user data without consent and avoided paying overseas taxes. What are the consequences?')">Privacy + Tax</button>
+  <button class="preset-btn" onclick="setQ('What happens if a company violates SOX compliance requirements?')">SOX Compliance</button>
+  <button class="preset-btn" onclick="setQ('What are the legal consequences if a company breaches a non-disclosure agreement?')">NDA Breach</button>
+</div>
+
+<!-- Input -->
+<div class="input-section">
+  <textarea id="question" placeholder="Type a legal question in English or Vietnamese...">If a company breaks a contract and avoids taxes, what are the legal and regulatory consequences?</textarea>
+  <button id="sendBtn" onclick="sendQuestion()">Ask ➜</button>
+</div>
+
+<!-- Log -->
+<div class="log-section">
+  <div class="log-header">
+    <span id="statusText">Ready</span>
+    <span class="timing" id="timingText"></span>
+  </div>
+  <div id="log"><span class="info-log">Select a question and click Ask ➜ to start the multi-agent pipeline.</span></div>
+</div>
+
+<script>
+  const CUSTOMER_URL = 'http://localhost:10100';
+  let currentStage = 4;
+
+  function setStage(n, el) {
+    currentStage = n;
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    const ports = document.querySelectorAll('.port');
+    ports.forEach(p => p.style.display = n === 5 ? 'block' : 'none');
+    log('<span class="info-log">Switched to Stage ' + n + (n === 4 ? ' (In-Process multi-agent)' : ' (Distributed A2A — start_all.ps1 must be running)') + '</span>');
+  }
+
+  function setQ(q) { document.getElementById('question').value = q; }
+
+  function resetBoxes() {
+    ['customer','law','tax','compliance','aggregate'].forEach(id => {
+      const el = document.getElementById('box-' + id);
+      el.classList.remove('active','done');
+    });
+  }
+
+  function activateBox(id) {
+    const el = document.getElementById('box-' + id);
+    el.classList.add('active');
+    el.classList.remove('done');
+  }
+
+  function doneBox(id) {
+    const el = document.getElementById('box-' + id);
+    el.classList.remove('active');
+    el.classList.add('done');
+  }
+
+  function log(html) {
+    const el = document.getElementById('log');
+    el.innerHTML += html + '\n';
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function clearLog() {
+    document.getElementById('log').innerHTML = '';
+    document.getElementById('timingText').textContent = '';
+  }
+
+  function uuid() {
+    return crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+  }
+
+  async function sendQuestion() {
+    const question = document.getElementById('question').value.trim();
+    if (!question) return;
+
+    if (currentStage === 4) {
+      runStage4Simulation(question);
+    } else {
+      runStage5(question);
+    }
+  }
+
+  // ── Stage 4: animated simulation (no API needed) ────────────────────────
+  async function runStage4Simulation(question) {
+    clearLog();
+    resetBoxes();
+    document.getElementById('sendBtn').disabled = true;
+    document.getElementById('statusText').textContent = 'Running Stage 4 pipeline...';
+
+    const steps = [
+      { box: 'law', label: 'analyze_law', msg: 'Lead attorney analysing legal aspects...', ms: 1200 },
+      { box: 'law', label: 'check_routing', msg: 'Keyword routing — detecting: tax + compliance keywords...', ms: 400 },
+      { box: 'tax', label: 'tax_specialist', msg: 'Tax specialist agent running (search_tax_law tool)...', ms: 1100 },
+      { box: 'compliance', label: 'compliance_specialist', msg: 'Compliance specialist agent running (search_compliance_law tool)...', ms: 1100 },
+      { box: 'aggregate', label: 'aggregate', msg: 'Combining all specialist analyses into final answer...', ms: 900 },
+    ];
+
+    const t0 = performance.now();
+    log('<span class="step-log">▶ Stage 4: Multi-Agent In-Process</span>');
+    log('<span class="info-log">Question: ' + question.slice(0, 80) + (question.length > 80 ? '...' : '') + '</span>');
+    log('');
+
+    // law + routing sequential
+    for (const s of steps.slice(0, 2)) {
+      activateBox(s.box);
+      log('<span class="spinner"></span><span class="step-log">[' + s.label + '] ' + s.msg + '</span>');
+      await sleep(s.ms);
+      doneBox(s.box);
+      log('  ✓ done');
+    }
+
+    // tax + compliance parallel
+    log('<span class="step-log">⟳ Parallel dispatch: Tax Agent + Compliance Agent</span>');
+    activateBox('tax');
+    activateBox('compliance');
+    log('<span class="spinner"></span><span class="step-log">[tax_specialist] ' + steps[2].msg + '</span>');
+    log('<span class="spinner"></span><span class="step-log">[compliance_specialist] ' + steps[3].msg + '</span>');
+    await sleep(Math.max(steps[2].ms, steps[3].ms));
+    doneBox('tax');
+    doneBox('compliance');
+    log('  ✓ Tax Agent done');
+    log('  ✓ Compliance Agent done');
+
+    // aggregate
+    activateBox('aggregate');
+    log('<span class="spinner"></span><span class="step-log">[aggregate] ' + steps[4].msg + '</span>');
+    await sleep(steps[4].ms);
+    doneBox('aggregate');
+
+    const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+
+    log('');
+    log('<span class="answer-log">─────────────────── FINAL ANSWER (simulated) ──────────────────</span>');
+    log('<span class="answer-log">Based on the multi-agent analysis:\n\n' +
+      '• Law Agent: Contract breach triggers UCC remedies — expectation damages, consequential damages (Hadley v. Baxendale), specific performance, and possible injunctive relief.\n\n' +
+      '• Tax Agent: Tax evasion under 26 U.S.C. § 7201 — felony, up to $250K fine and 5 years prison. FBAR violations for offshore accounts: up to $100K or 50% of account balance.\n\n' +
+      '• Compliance Agent: SOX and SEC regulatory exposure if a public company. FCPA liability for foreign payments. Additional civil penalties under IRC §§ 6662/6663.\n\n' +
+      'Disclaimer: For educational purposes only. Consult a licensed attorney for specific advice.</span>');
+    log('');
+
+    const total = elapsed;
+    document.getElementById('timingText').textContent = '⏱ ' + total + 's (simulated)';
+    document.getElementById('statusText').textContent = 'Done';
+    document.getElementById('sendBtn').disabled = false;
+
+    log('<span class="info-log">─── Optimization note ───</span>');
+    log('<span class="info-log">check_routing uses keyword matching (not an LLM call) → saves ~2-3s</span>');
+    log('<span class="info-log">Tax + Compliance agents run IN PARALLEL via LangGraph Send API</span>');
+  }
+
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+  // ── Stage 5: real A2A call ────────────────────────────────────────────────
+  async function runStage5(question) {
+    clearLog();
+    resetBoxes();
+    document.getElementById('sendBtn').disabled = true;
+    document.getElementById('statusText').textContent = 'Connecting to Customer Agent...';
+
+    log('<span class="step-log">▶ Stage 5: Distributed A2A System</span>');
+    log('<span class="info-log">Endpoint: ' + CUSTOMER_URL + '</span>');
+    log('<span class="info-log">Question: ' + question.slice(0, 80) + (question.length > 80 ? '...' : '') + '</span>');
+    log('');
+
+    // Check agent card
+    try {
+      activateBox('customer');
+      log('<span class="spinner"></span>Fetching agent card from ' + CUSTOMER_URL + '/.well-known/agent.json...');
+      const cardResp = await fetch(CUSTOMER_URL + '/.well-known/agent.json');
+      if (!cardResp.ok) throw new Error('HTTP ' + cardResp.status);
+      const card = await cardResp.json();
+      log('  ✓ Connected to: ' + card.name + ' v' + card.version);
+    } catch (e) {
+      log('<span class="error-log">✗ Cannot reach Customer Agent at ' + CUSTOMER_URL + '</span>');
+      log('<span class="error-log">  Make sure Stage 5 is running: .\\start_all.ps1</span>');
+      log('<span class="error-log">  Error: ' + e.message + '</span>');
+      document.getElementById('sendBtn').disabled = false;
+      document.getElementById('statusText').textContent = 'Error';
+      resetBoxes();
+      return;
+    }
+
+    // Animate pipeline while waiting
+    const animInterval = animatePipeline();
+
+    // Send A2A message
+    const msgId = uuid();
+    const reqId = uuid();
+    const body = {
+      jsonrpc: '2.0',
+      id: reqId,
+      method: 'message/send',
+      params: {
+        message: {
+          role: 'user',
+          parts: [{ kind: 'text', text: question }],
+          messageId: msgId,
+        }
+      }
+    };
+
+    log('<span class="step-log">→ Sending A2A request (may take 30-60s)...</span>');
+    const t0 = performance.now();
+
+    try {
+      const resp = await fetch(CUSTOMER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      clearInterval(animInterval);
+      const elapsed = ((performance.now() - t0) / 1000).toFixed(2);
+
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error('HTTP ' + resp.status + ': ' + txt.slice(0, 200));
+      }
+
+      const data = await resp.json();
+
+      // Extract text from A2A response
+      let answer = extractText(data);
+
+      resetBoxes();
+      ['customer','law','tax','compliance','aggregate'].forEach(id => doneBox(id));
+
+      log('');
+      log('<span class="answer-log">─────────────────── FINAL ANSWER ──────────────────</span>');
+      log('<span class="answer-log">' + (answer || '[No text in response — check agent logs]') + '</span>');
+      log('');
+      document.getElementById('timingText').textContent = '⏱ ' + elapsed + 's';
+      document.getElementById('statusText').textContent = 'Done';
+
+    } catch (e) {
+      clearInterval(animInterval);
+      resetBoxes();
+      log('<span class="error-log">✗ Request failed: ' + e.message + '</span>');
+      document.getElementById('statusText').textContent = 'Error';
+    }
+
+    document.getElementById('sendBtn').disabled = false;
+  }
+
+  function animatePipeline() {
+    const sequence = [
+      ['customer'],
+      ['customer', 'law'],
+      ['law'],
+      ['tax', 'compliance'],
+      ['aggregate'],
+    ];
+    let i = 0;
+    return setInterval(() => {
+      resetBoxes();
+      (sequence[i % sequence.length]).forEach(id => activateBox(id));
+      i++;
+    }, 1800);
+  }
+
+  function extractText(data) {
+    // Walk A2A JSON-RPC response tree for text parts
+    try {
+      const result = data?.result ?? data?.result?.result;
+      const artifacts = result?.artifacts ?? [];
+      for (const art of artifacts) {
+        for (const p of (art.parts ?? [])) {
+          const text = p?.text ?? p?.root?.text;
+          if (text) return text;
+        }
+      }
+      const parts = result?.parts ?? [];
+      for (const p of parts) {
+        const text = p?.text ?? p?.root?.text;
+        if (text) return text;
+      }
+    } catch (_) {}
+    return '';
+  }
+</script>
+</body>
+</html>
